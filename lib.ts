@@ -2,10 +2,6 @@
  * Created by denotat on 11/7/13.
  */
 
-/**
- * Created by denotat on 11/3/13.
- */
-
 module components {
 
     export class Exception {
@@ -148,7 +144,7 @@ module components {
             return false;
         }
 
-        public prop<T>(propName: string, value?: T): any {
+        public prop<T>(propName: string, value?: T): T {
             var val = this.getProperty(propName);
             if (typeof(value) !== "undefined") {
                 this.setProperty(propName, value);

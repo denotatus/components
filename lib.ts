@@ -80,22 +80,21 @@ module components {
             var listenerInfo = { listener: listener, priority: priority };
             var listeners = this._listeners[eventType];
             if (!(listeners && listeners.length)) {
-                listeners = this._listeners[eventType] = [listenerInfo]
+                this._listeners[eventType] = [listenerInfo];
             } else {
                 // prevent duplicate listeners
                 for (var i = 0, curr; curr = listeners[i]; i++) {
                     if (curr.listener === listener) {
-                        if (curr.priority == priority) {
+                        if (curr.priority === priority) {
                             return;
                         }
                         listeners.splice(i, 1);
+                        break;
                     }
                 }
                 // place listener according to it`s priority
                 var len = listeners.length;
-                if (listeners[0].priority > priority) {
-                    listeners.unshift(listenerInfo);
-                } else if (listeners[len - 1].priority <= priority) {
+                if (listeners[len - 1].priority <= priority) {
                     listeners.push(listenerInfo);
                 } else {
                     for (var i = 0; i < len; i++) {

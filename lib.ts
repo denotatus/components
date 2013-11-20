@@ -5,6 +5,12 @@
 
 module components {
 
+    export class StringExt {
+        public static isNullOrEmpty(str: string): boolean {
+            return !!str;
+        }
+    }
+
     export class Exception {
         public static argumentUndefined(argName:string):Error {
             return new Error("Argument '" + argName + "' can`t be undefined.");
@@ -23,16 +29,85 @@ module components {
         }
     }
 
-    export class Event {
-        constructor(public type:string, public target:IEventTarget, public data?:any, public defaultPrevented = false, public propagationStopped = false) {
+    export interface IArgumentValidationInfo {
+        name: string;
+        mayByNull?: boolean;
+        identifier?: boolean;
+    }
+
+    export class Func {
+        public static validateArguments(args: IArguments, expectedArgs: Array<IArgumentValidationInfo>): Error {
+            var err:Error = null;
+
+            for(var i = 0, len = expectedArgs.length; i < len; i++) {
+                var expectedArg = expectedArgs[i];
+                if (!expectedArg)
+                    throw Exception.invalidArgument("expectedArgs", "Validation info not defined for parameter with index " + i);
+
+                err = Func.validateArgument(args[i], expectedArg);
+                if (err !== null) {
+                    break;
+                }
+            }
+            return err;
         }
 
+        public static validateArgument(arg, argInfo: IArgumentValidationInfo):Error {
+            var err: Error = null;
+
+            var argName = argInfo.name;
+            if (typeof (arg) === "undefined" && !argInfo.mayByNull) {
+                return Exception.argumentUndefined(argName);
+            } else if (arg === null && !argInfo.mayByNull) {
+                return Exception.argumentNull(argName);
+            } else {
+                if (argInfo.identifier) {
+                    if (typeof (arg) === "string" || arg.constructor === String) {
+                        if (arg) {
+                            if (!/\s/.test(arg)) {
+                                if (!/^([_$A-z])+[0-9_$A-z]*$/.test(arg)) {
+                                    err = Exception.invalidArgument(argName, "Contains not allowed characters.");
+                                }
+                            } else {
+                                err = Exception.invalidArgument(argName, "Must contain no whitespace.");
+                            }
+                        } else {
+                            err = Exception.invalidArgument(argName, "Not empty string expected.");
+                        }
+                    } else {
+                        err = Exception.invalidArgument(argName, "String expected.");
+                    }
+                }
+            }
+            return err;
+        }
+
+        public static createDelegate(instance: any, method: Function): Function {
+            return function() {
+                method.apply(instance, arguments);
+            }
+        }
+
+        public static RETURN_FALSE = () => false;
+
+        public static RETURN_TRUE = () => true;
+    }
+
+    export class Event {
+
+        constructor(public type:string, public target:IEventTarget, public data?:any) {
+        }
+
+        public isDefaultPrevented = Func.RETURN_FALSE;
+
+        public isPropagationStopped = Func.RETURN_FALSE;
+
         public preventDefault():void {
-            this.defaultPrevented = true;
+            this.isDefaultPrevented = Func.RETURN_TRUE;
         }
 
         public stopPropagation():void {
-            this.propagationStopped = true;
+            this.isPropagationStopped = Func.RETURN_TRUE;
         }
     }
 
@@ -73,9 +148,11 @@ module components {
         }
 
         public addEventListener(eventType:string, listener:IEventListener, priority = EventPriority.Normal):void {
-            if (!eventType) throw Exception.argumentNotDefined("eventType");
-            if (/\s/.test(eventType)) throw Exception.invalidArgument("eventType", "Event type must contain no whitespaces.");
-            if (!listener) throw Exception.argumentNotDefined("listener");
+            var e = Func.validateArguments(arguments, [
+                { name: "eventType", identifier: true},
+                { name: "listener" }
+            ]);
+            if (e) throw e;
 
             var listenerInfo = { listener: listener, priority: priority };
             var listeners = this._listeners[eventType];
@@ -108,7 +185,8 @@ module components {
         }
 
         public removeEventListener(eventType:string, listener?:IEventListener):void {
-            if (!eventType) throw Exception.argumentNotDefined("eventType");
+            var e = Func.validateArgument(eventType, {name: "eventType" });
+            if (e) throw e;
 
             if (typeof (listener) === "undefined") {
                 delete this._listeners[eventType];
@@ -125,7 +203,8 @@ module components {
         }
 
         public dispatchEvent(event:any, eventData?:any):boolean {
-            if (!event) throw Exception.argumentNotDefined("event");
+            var e = Func.validateArgument(event, {name: "event" });
+            if (e) throw e;
 
             var listeners = this._listeners[event.type];
             if (listeners && listeners.length) {
@@ -141,32 +220,34 @@ module components {
                 for (var i = 0, len = listeners.length; i < len; i++) {
                     try {
                         listeners[i].listener.handleEvent(event);
-                        if (event.propagationStopped) break;
-                    } catch (err) {
-                    }
+                        if (event.isPropagationStopped()) break;
+                    } catch (err) { }
                 }
 
-                return event.defaultPrevented;
+                return event.isDefaultPrevented();
             }
             return false;
         }
 
-        public hasListener(eventType:string):boolean {
+        public hasEventListener(eventType:string):boolean {
             return !!this._listeners[eventType];
         }
 
         public clone():IEventTarget {
-            var clone = new (<any>this).constructor(this._target);
-            for (var eventType in this._listeners) {
-                clone._listeners[eventType] = this._listeners[eventType];
+            var clone: EventTarget = new (<any>this).constructor(this._target);
+
+            var listeners = this._listeners;
+            for (var eventType in listeners) {
+                if (listeners.hasOwnProperty(eventType)) {
+                    clone._listeners[eventType] = listeners[eventType];
+                }
             }
             return clone;
         }
     }
 
     export class Component extends EventTarget {
-        private _properties:{ [key: string]: any
-        } = {};
+        private _properties:{ [key: string]: any } = {};
 
         constructor() {
             super();
@@ -177,8 +258,8 @@ module components {
         }
 
         public $set<T>(propName:string, value:T):boolean {
-            if (!propName) throw Exception.argumentNotDefined("propName");
-            if (/\s/.test(propName)) throw Exception.invalidArgument("propName", "Property name must contains no whitespaces.");
+            var e = Func.validateArgument(propName, { name: "propName", identifier: true });
+            if (e) throw e;
 
             var prev = this.$get(propName);
             if (prev !== value && (typeof (prev) !== "undefined" && typeof (prev.compareTo) === "function" && prev.compareTo(value) != 0)) {
